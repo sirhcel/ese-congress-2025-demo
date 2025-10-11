@@ -14,3 +14,7 @@ idf_component_register(SRCS
     "display_rgb.cpp"
     "display_watch_s3.c"
     INCLUDE_DIRS ".")
+
+# FIXME: Find a way to properly set this as a link-time dependency from the
+# rusty component.
+target_link_libraries(${COMPONENT_LIB} rusty)
