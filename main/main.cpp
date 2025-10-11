@@ -28,6 +28,7 @@
 #include "tft_driver.h"
 #include "product_pins.h"
 
+#include "rusty.h"
 #include "wifi_scanner.h"
 
 
@@ -147,6 +148,8 @@ extern "C" void app_main(void)
 
     ESP_LOGI(TAG, "Initialize LVGL library");
     lv_init();
+
+    const int sum = rusty_add(42, 1);
 
 
     // alloc draw buffers used by LVGL
