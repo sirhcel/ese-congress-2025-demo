@@ -150,6 +150,7 @@ extern "C" void app_main(void)
     lv_init();
 
     const int sum = rusty_add(42, 1);
+    ESP_LOGI(TAG, "rusty_add(42, 1): %d", sum);
 
 
     // alloc draw buffers used by LVGL
