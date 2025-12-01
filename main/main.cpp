@@ -28,6 +28,8 @@
 #include "tft_driver.h"
 #include "product_pins.h"
 
+#include "wifi_scanner.h"
+
 
 static const char *TAG = "main";
 
@@ -214,16 +216,8 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "Display LVGL");
     // Lock the mutex due to the LVGL APIs are not thread-safe
     if (example_lvgl_lock(-1)) {
+        wifi_scanner();
 
-// #if   CONFIG_USE_DEMO_WIDGETS
-        // lv_demo_widgets();
-// #elif CONFIG_USE_DEMO_BENCHMARK
-        // lv_demo_benchmark();
-// #elif CONFIG_USE_DEMO_STRESS
-//         lv_demo_stress();
-// #elif CONFIG_USE_DEMO_MUSIC
-        lv_demo_music();
-// #endif
         // Release the mutex
         example_lvgl_unlock();
     }
