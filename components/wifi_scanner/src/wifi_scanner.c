@@ -52,6 +52,7 @@ static SemaphoreHandle_t background_scan_semaphore = NULL;
 static SemaphoreHandle_t scan_data_semaphore = NULL;
 static wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE] = {0, };
 static uint16_t ap_count = 0;
+static uint16_t ap_display_index = 0;
 
 
 static void scan_networks(void *parameters) {
@@ -65,6 +66,7 @@ static void scan_networks(void *parameters) {
         ESP_LOGI(TAG, "WiFi background scan started");
 
         ap_count = 0;
+        ap_display_index = 0;
         memset(ap_info, 0, sizeof(ap_info));
 
 #ifdef USE_CHANNEL_BITMAP
@@ -110,6 +112,9 @@ typedef struct {
 typedef struct {
     lv_obj_t *screen;
     lv_obj_t *title;
+    lv_obj_t *ssid;
+    lv_obj_t *rssi;
+    lv_obj_t *auth;
 } details_screen_t;
 
 static main_screen_t main_screen = {0, };
@@ -126,7 +131,9 @@ void create_details_screen(details_screen_t *screen, const char *title) {
     lv_obj_set_flex_flow(view, LV_FLEX_FLOW_COLUMN);
 
     screen->title = lv_label_create(view);
-    lv_label_set_text(screen->title, title);
+    screen->ssid = lv_label_create(view);
+    screen->rssi = lv_label_create(view);
+    screen->auth = lv_label_create(view);
 }
 
 
@@ -142,22 +149,62 @@ void create_main_screen(main_screen_t *screen, const char *title) {
 }
 
 
+static const char *pretty_authmode(int authmode) {
+    switch (authmode) {
+        case WIFI_AUTH_OPEN: return "Open";
+        case WIFI_AUTH_OWE: return "One";
+        case WIFI_AUTH_WEP: return "WEP";
+        case WIFI_AUTH_WPA_PSK: return "WPA PSK";
+        case WIFI_AUTH_WPA2_PSK: return "WPA2 PSK";
+        case WIFI_AUTH_WPA_WPA2_PSK: return "WPA/WPA2 PSK";
+        case WIFI_AUTH_ENTERPRISE: return "Enterprise";
+        case WIFI_AUTH_WPA3_PSK: return "WPA3 PSK";
+        case WIFI_AUTH_WPA2_WPA3_PSK: return "WPA2/WPA3 PSK";
+        case WIFI_AUTH_WPA3_ENT_192: return "WPA3 Enterprise 192";
+        default: return "Unknown";
+    }
+}
+
+
 static void cycle_timer_cb(lv_timer_t *timer) {
     lv_obj_t *current_screen = lv_scr_act();
     lv_obj_t *new_screen = NULL;
 
-    if (current_screen == details_screen_1.screen) {
-        new_screen = details_screen_2.screen;
-    } else if (current_screen == details_screen_2.screen) {
-        new_screen = main_screen.screen;
+    if (ap_display_index < ap_count) {
+        const wifi_ap_record_t *info = &ap_info[ap_display_index];
+        details_screen_t *new_details = NULL;
+
+        ESP_LOGI(TAG, "about to display details %d/%d", ap_display_index, ap_count);
+
+        // Determine next screen object to prepare.
+        if (current_screen == details_screen_1.screen) {
+            new_details = &details_screen_2;
+            new_screen = new_details->screen;
+        } else {
+            new_details = &details_screen_1;
+            new_screen = new_details->screen;
+        }
+
+        // Setup information for next screen.
+        lv_label_set_text_fmt(
+            new_details->title,
+            "Network %" PRIu16 "/%" PRIu16,
+            ap_display_index + 1,
+            ap_count
+        );
+        lv_label_set_text(new_details->ssid, (const char *)info->ssid);
+        lv_label_set_text_fmt(new_details->rssi, "RSSI: %d", info->rssi);
+        lv_label_set_text_fmt(new_details->auth, "Auth: %s", pretty_authmode(info->authmode));
+
+        ap_display_index += 1;
     } else {
-        new_screen = details_screen_1.screen;
+        new_screen = main_screen.screen;
     }
 
-    if (new_screen == main_screen.screen) {
-        xSemaphoreGive(background_scan_semaphore);
-    } else if (new_screen == details_screen_1.screen) {
+    if (current_screen == main_screen.screen && new_screen != main_screen.screen) {
         xSemaphoreTake(scan_data_semaphore, portMAX_DELAY);
+    } else if (current_screen != main_screen.screen && new_screen == main_screen.screen) {
+        xSemaphoreGive(background_scan_semaphore);
     }
 
     if (new_screen != NULL) {
