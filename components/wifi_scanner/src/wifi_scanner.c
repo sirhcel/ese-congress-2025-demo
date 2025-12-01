@@ -11,6 +11,7 @@
 #include "wifi_scanner.h"
 
 
+#define BACKGROUND_SCAN_STACK_SIZE 4096
 #define DEFAULT_SCAN_LIST_SIZE CONFIG_EXAMPLE_SCAN_LIST_SIZE
 
 #ifdef CONFIG_EXAMPLE_USE_SCAN_CHANNEL_BITMAP
@@ -34,9 +35,7 @@ static void array_2_channel_bitmap(const uint8_t channel_list[], const uint8_t c
 #endif /*USE_CHANNEL_BITMAP*/
 
 
-/* Initialize Wi-Fi as sta and set scan method */
-static void wifi_scan(void)
-{
+static void init_wifi(void) {
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
@@ -44,42 +43,61 @@ static void wifi_scan(void)
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    uint16_t number = DEFAULT_SCAN_LIST_SIZE;
-    wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
-    uint16_t ap_count = 0;
-    memset(ap_info, 0, sizeof(ap_info));
-
-
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
+}
+
+
+static SemaphoreHandle_t background_scan_semaphore = NULL;
+static SemaphoreHandle_t scan_data_semaphore = NULL;
+static wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE] = {0, };
+static uint16_t ap_count = 0;
+
+
+static void scan_networks(void *parameters) {
+    uint16_t number = DEFAULT_SCAN_LIST_SIZE;
+
+    ESP_LOGI(TAG, "WiFi background scan task running");
+
+    for (;;) {
+        xSemaphoreTake(background_scan_semaphore, portMAX_DELAY);
+
+        ESP_LOGI(TAG, "WiFi background scan started");
+
+        ap_count = 0;
+        memset(ap_info, 0, sizeof(ap_info));
 
 #ifdef USE_CHANNEL_BITMAP
-    wifi_scan_config_t *scan_config = (wifi_scan_config_t *)calloc(1,sizeof(wifi_scan_config_t));
-    if (!scan_config) {
-        ESP_LOGE(TAG, "Memory Allocation for scan config failed!");
-        return;
-    }
-    array_2_channel_bitmap(channel_list, CHANNEL_LIST_SIZE, scan_config);
-    esp_wifi_scan_start(scan_config, true);
-    free(scan_config);
+        wifi_scan_config_t *scan_config = (wifi_scan_config_t *)calloc(1,sizeof(wifi_scan_config_t));
+        if (!scan_config) {
+            ESP_LOGE(TAG, "Memory Allocation for scan config failed!");
+            return;
+        }
+        array_2_channel_bitmap(channel_list, CHANNEL_LIST_SIZE, scan_config);
+        esp_wifi_scan_start(scan_config, true);
+        free(scan_config);
 
 #else
-    esp_wifi_scan_start(NULL, true);
+        esp_wifi_scan_start(NULL, true);
 #endif /*USE_CHANNEL_BITMAP*/
 
-    ESP_LOGI(TAG, "Max AP number ap_info can hold = %u", number);
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, ap_info));
-    ESP_LOGI(TAG, "Total APs scanned = %u, actual AP number ap_info holds = %u", ap_count, number);
-    for (int i = 0; i < number; i++) {
-        ESP_LOGI(TAG,
-            "%d: ssid: %s, rssi: %d, channel: %d",
-            i,
-            ap_info[i].ssid,
-            ap_info[i].rssi,
-            ap_info[i].primary
-        );
+        ESP_LOGI(TAG, "Max AP number ap_info can hold = %u", number);
+        ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
+        ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, ap_info));
+        ESP_LOGI(TAG, "Total APs scanned = %u, actual AP number ap_info holds = %u", ap_count, number);
+        for (int i = 0; i < number; i++) {
+            ESP_LOGI(TAG,
+                "%d: ssid: %s, rssi: %d, channel: %d",
+                i,
+                ap_info[i].ssid,
+                ap_info[i].rssi,
+                ap_info[i].primary
+            );
+        }
+
+        ESP_LOGI(TAG, "WiFi background scan done");
+
+        xSemaphoreGive(scan_data_semaphore);
     }
 }
 
@@ -136,6 +154,12 @@ static void cycle_timer_cb(lv_timer_t *timer) {
         new_screen = details_screen_1.screen;
     }
 
+    if (new_screen == main_screen.screen) {
+        xSemaphoreGive(background_scan_semaphore);
+    } else if (new_screen == details_screen_1.screen) {
+        xSemaphoreTake(scan_data_semaphore, portMAX_DELAY);
+    }
+
     if (new_screen != NULL) {
         lv_scr_load_anim(
             new_screen,
@@ -158,13 +182,33 @@ void wifi_scanner(void) {
     }
     ESP_ERROR_CHECK(ret);
 
-    create_main_screen(&main_screen, "WiFi Scanner");
-    create_details_screen(&details_screen_1, "Network 1");
-    create_details_screen(&details_screen_2, "Network 2");
+    background_scan_semaphore = xSemaphoreCreateBinary();
+    assert(background_scan_semaphore);
+    xSemaphoreGive(background_scan_semaphore);
 
-    cycle_timer = lv_timer_create(cycle_timer_cb, 5000, NULL);
+    scan_data_semaphore = xSemaphoreCreateBinary();
+    assert(scan_data_semaphore);
+
+    create_main_screen(&main_screen, "WiFi Scanner");
+    assert(main_screen.screen);
+    create_details_screen(&details_screen_1, "Network 1");
+    assert(details_screen_1.screen);
+    create_details_screen(&details_screen_2, "Network 2");
+    assert(details_screen_2.screen);
 
     lv_scr_load(main_screen.screen);
 
-    wifi_scan();
+    init_wifi();
+
+    xTaskCreate(
+        scan_networks,
+        "WiFi Scan",
+        BACKGROUND_SCAN_STACK_SIZE,
+        NULL,
+        tskIDLE_PRIORITY,
+        NULL
+    );
+
+    cycle_timer = lv_timer_create(cycle_timer_cb, 5000, NULL);
+    assert(cycle_timer);
 }
