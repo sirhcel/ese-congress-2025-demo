@@ -125,38 +125,50 @@ static main_screen_t main_screen = {0, };
 static details_screen_t details_screen_1 = {0, };
 static details_screen_t details_screen_2 = {0, };
 
+static lv_style_t label_style;
+
 static lv_timer_t *cycle_timer = NULL;
 
 
-void create_details_screen(details_screen_t *screen, const char *title) {
+static void init_styles(void) {
+    lv_style_init(&label_style);
+    lv_style_set_text_color(&label_style, lv_color_hex(0x657377));
+    lv_style_set_text_font(&label_style, &lv_font_montserrat_18);
+}
+
+
+void init_details_screen(details_screen_t *screen, const char *title) {
     screen->screen = lv_obj_create(NULL);
     lv_obj_t *view = lv_obj_create(screen->screen);
     lv_obj_set_size(view, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_flex_flow(view, LV_FLEX_FLOW_COLUMN);
 
     screen->title = lv_label_create(view);
-    lv_obj_set_style_text_font(screen->title, &lv_font_montserrat_18, 0);
+    lv_obj_add_style(screen->title, &label_style, 0);
+
     screen->ssid = lv_label_create(view);
     lv_obj_set_style_text_font(screen->ssid, &lv_font_montserrat_32, 0);
     screen->rssi = lv_label_create(view);
     lv_obj_set_style_text_font(screen->rssi, &lv_font_montserrat_18, 0);
+    lv_label_set_recolor(screen->rssi, true);
     screen->auth = lv_label_create(view);
     lv_obj_set_style_text_font(screen->auth, &lv_font_montserrat_18, 0);
+    lv_label_set_recolor(screen->auth, true);
 }
 
 
-void create_main_screen(main_screen_t *screen, const char *title) {
+void init_main_screen(main_screen_t *screen, const char *title) {
     screen->screen = lv_obj_create(NULL);
     lv_obj_t *view = lv_obj_create(screen->screen);
     lv_obj_set_size(view, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_flex_flow(view, LV_FLEX_FLOW_COLUMN);
 
     screen->title = lv_label_create(view);
-    // lv_obj_add_style(label_title, &style_label, 0);
     lv_obj_set_style_text_font(screen->title, &lv_font_montserrat_32, 0);
     lv_label_set_text(screen->title, title);
 
     screen->status = lv_label_create(view);
+    lv_obj_add_style(screen->status, &label_style, 0);
     lv_obj_set_style_text_font(screen->status, &lv_font_montserrat_18, 0);
     lv_label_set_text(screen->status, "Scanning ...");
 }
@@ -207,8 +219,8 @@ static void cycle_timer_cb(lv_timer_t *timer) {
             ap_count
         );
         lv_label_set_text(new_details->ssid, (const char *)info->ssid);
-        lv_label_set_text_fmt(new_details->rssi, "RSSI: %d", info->rssi);
-        lv_label_set_text_fmt(new_details->auth, "Auth: %s", pretty_authmode(info->authmode));
+        lv_label_set_text_fmt(new_details->rssi, "#657377 RSSI:# %d", info->rssi);
+        lv_label_set_text_fmt(new_details->auth, "#657377 Auth:# %s", pretty_authmode(info->authmode));
 
         ap_info_index += 1;
     } else {
@@ -225,8 +237,7 @@ static void cycle_timer_cb(lv_timer_t *timer) {
         lv_scr_load_anim(
             new_screen,
             LV_SCR_LOAD_ANIM_OVER_LEFT,
-            // LV_SCR_LOAD_ANIM_FADE_IN,
-            500,
+            300,
             0,
             false
         );
@@ -250,11 +261,12 @@ void wifi_scanner(void) {
     scan_data_semaphore = xSemaphoreCreateBinary();
     assert(scan_data_semaphore);
 
-    create_main_screen(&main_screen, "WiFi Scanner");
+    init_styles();
+    init_main_screen(&main_screen, "WiFi Scanner");
     assert(main_screen.screen);
-    create_details_screen(&details_screen_1, "Network 1");
+    init_details_screen(&details_screen_1, "Network 1");
     assert(details_screen_1.screen);
-    create_details_screen(&details_screen_2, "Network 2");
+    init_details_screen(&details_screen_2, "Network 2");
     assert(details_screen_2.screen);
 
     lv_scr_load(main_screen.screen);
