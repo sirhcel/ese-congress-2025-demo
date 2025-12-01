@@ -13,3 +13,4 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
+libc_alloc = { version = "1.0.7", default-features = false }
