@@ -14,3 +14,4 @@ panic = "abort"
 
 [dependencies]
 libc_alloc = { version = "1.0.7", default-features = false }
+qrcode = { git = "https://github.com/kennytm/qrcode-rust.git", rev = "c7780e8549ac4fb3da81fdf7d7f010a27db78c0f", default-features = false }
