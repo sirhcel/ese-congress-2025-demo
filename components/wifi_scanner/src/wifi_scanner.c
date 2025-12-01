@@ -4,6 +4,7 @@
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_event.h"
+#include "lvgl.h"
 #include "nvs_flash.h"
 #include "regex.h"
 
@@ -83,8 +84,72 @@ static void wifi_scan(void)
 }
 
 
-void wifi_scanner(void)
-{
+typedef struct {
+    lv_obj_t *screen;
+    lv_obj_t *title;
+} main_screen_t;
+
+typedef struct {
+    lv_obj_t *screen;
+    lv_obj_t *title;
+} details_screen_t;
+
+static main_screen_t main_screen = {0, };
+static details_screen_t details_screen_1 = {0, };
+static details_screen_t details_screen_2 = {0, };
+
+static lv_timer_t *cycle_timer = NULL;
+
+
+void create_details_screen(details_screen_t *screen, const char *title) {
+    screen->screen = lv_obj_create(NULL);
+    lv_obj_t *view = lv_obj_create(screen->screen);
+    lv_obj_set_size(view, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_flex_flow(view, LV_FLEX_FLOW_COLUMN);
+
+    screen->title = lv_label_create(view);
+    lv_label_set_text(screen->title, title);
+}
+
+
+void create_main_screen(main_screen_t *screen, const char *title) {
+    screen->screen = lv_obj_create(NULL);
+    lv_obj_t *view = lv_obj_create(screen->screen);
+    lv_obj_set_size(view, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_flex_flow(view, LV_FLEX_FLOW_COLUMN);
+
+    screen->title = lv_label_create(view);
+    // lv_obj_add_style(label_title, &style_label, 0);
+    lv_label_set_text(screen->title, title);
+}
+
+
+static void cycle_timer_cb(lv_timer_t *timer) {
+    lv_obj_t *current_screen = lv_scr_act();
+    lv_obj_t *new_screen = NULL;
+
+    if (current_screen == details_screen_1.screen) {
+        new_screen = details_screen_2.screen;
+    } else if (current_screen == details_screen_2.screen) {
+        new_screen = main_screen.screen;
+    } else {
+        new_screen = details_screen_1.screen;
+    }
+
+    if (new_screen != NULL) {
+        lv_scr_load_anim(
+            new_screen,
+            LV_SCR_LOAD_ANIM_OVER_LEFT,
+            // LV_SCR_LOAD_ANIM_FADE_IN,
+            500,
+            0,
+            false
+        );
+    }
+}
+
+
+void wifi_scanner(void) {
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -92,6 +157,14 @@ void wifi_scanner(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    create_main_screen(&main_screen, "WiFi Scanner");
+    create_details_screen(&details_screen_1, "Network 1");
+    create_details_screen(&details_screen_2, "Network 2");
+
+    cycle_timer = lv_timer_create(cycle_timer_cb, 5000, NULL);
+
+    lv_scr_load(main_screen.screen);
 
     wifi_scan();
 }
