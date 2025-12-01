@@ -51,8 +51,9 @@ static void init_wifi(void) {
 static SemaphoreHandle_t background_scan_semaphore = NULL;
 static SemaphoreHandle_t scan_data_semaphore = NULL;
 static wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE] = {0, };
+static uint16_t ap_info_length = 0;
+static uint16_t ap_info_index = 0;
 static uint16_t ap_count = 0;
-static uint16_t ap_display_index = 0;
 
 
 static void scan_networks(void *parameters) {
@@ -66,7 +67,8 @@ static void scan_networks(void *parameters) {
         ESP_LOGI(TAG, "WiFi background scan started");
 
         ap_count = 0;
-        ap_display_index = 0;
+        ap_info_index = 0;
+        ap_info_length = 0;
         memset(ap_info, 0, sizeof(ap_info));
 
 #ifdef USE_CHANNEL_BITMAP
@@ -78,7 +80,6 @@ static void scan_networks(void *parameters) {
         array_2_channel_bitmap(channel_list, CHANNEL_LIST_SIZE, scan_config);
         esp_wifi_scan_start(scan_config, true);
         free(scan_config);
-
 #else
         esp_wifi_scan_start(NULL, true);
 #endif /*USE_CHANNEL_BITMAP*/
@@ -86,6 +87,8 @@ static void scan_networks(void *parameters) {
         ESP_LOGI(TAG, "Max AP number ap_info can hold = %u", number);
         ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
         ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, ap_info));
+        ap_info_length = number;
+
         ESP_LOGI(TAG, "Total APs scanned = %u, actual AP number ap_info holds = %u", ap_count, number);
         for (int i = 0; i < number; i++) {
             ESP_LOGI(TAG,
@@ -107,6 +110,7 @@ static void scan_networks(void *parameters) {
 typedef struct {
     lv_obj_t *screen;
     lv_obj_t *title;
+    lv_obj_t *status;
 } main_screen_t;
 
 typedef struct {
@@ -131,9 +135,13 @@ void create_details_screen(details_screen_t *screen, const char *title) {
     lv_obj_set_flex_flow(view, LV_FLEX_FLOW_COLUMN);
 
     screen->title = lv_label_create(view);
+    lv_obj_set_style_text_font(screen->title, &lv_font_montserrat_18, 0);
     screen->ssid = lv_label_create(view);
+    lv_obj_set_style_text_font(screen->ssid, &lv_font_montserrat_32, 0);
     screen->rssi = lv_label_create(view);
+    lv_obj_set_style_text_font(screen->rssi, &lv_font_montserrat_18, 0);
     screen->auth = lv_label_create(view);
+    lv_obj_set_style_text_font(screen->auth, &lv_font_montserrat_18, 0);
 }
 
 
@@ -145,7 +153,12 @@ void create_main_screen(main_screen_t *screen, const char *title) {
 
     screen->title = lv_label_create(view);
     // lv_obj_add_style(label_title, &style_label, 0);
+    lv_obj_set_style_text_font(screen->title, &lv_font_montserrat_32, 0);
     lv_label_set_text(screen->title, title);
+
+    screen->status = lv_label_create(view);
+    lv_obj_set_style_text_font(screen->status, &lv_font_montserrat_18, 0);
+    lv_label_set_text(screen->status, "Scanning ...");
 }
 
 
@@ -170,11 +183,11 @@ static void cycle_timer_cb(lv_timer_t *timer) {
     lv_obj_t *current_screen = lv_scr_act();
     lv_obj_t *new_screen = NULL;
 
-    if (ap_display_index < ap_count) {
-        const wifi_ap_record_t *info = &ap_info[ap_display_index];
+    if (ap_info_index < ap_info_length) {
+        const wifi_ap_record_t *info = &ap_info[ap_info_index];
         details_screen_t *new_details = NULL;
 
-        ESP_LOGI(TAG, "about to display details %d/%d", ap_display_index, ap_count);
+        ESP_LOGI(TAG, "about to display details %d/%d", ap_info_index + 1, ap_info_length);
 
         // Determine next screen object to prepare.
         if (current_screen == details_screen_1.screen) {
@@ -188,15 +201,16 @@ static void cycle_timer_cb(lv_timer_t *timer) {
         // Setup information for next screen.
         lv_label_set_text_fmt(
             new_details->title,
-            "Network %" PRIu16 "/%" PRIu16,
-            ap_display_index + 1,
+            "Network %" PRIu16 "/%" PRIu16 " (%" PRIu16 ")",
+            ap_info_index + 1,
+            ap_info_length,
             ap_count
         );
         lv_label_set_text(new_details->ssid, (const char *)info->ssid);
         lv_label_set_text_fmt(new_details->rssi, "RSSI: %d", info->rssi);
         lv_label_set_text_fmt(new_details->auth, "Auth: %s", pretty_authmode(info->authmode));
 
-        ap_display_index += 1;
+        ap_info_index += 1;
     } else {
         new_screen = main_screen.screen;
     }
