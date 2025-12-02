@@ -109,7 +109,7 @@ static void scan_networks(void *parameters) {
 
 
 #define QR_IMG_DATA_HEADER_LENGTH 8
-#define QR_IMG_DATA_DATA_MAX_LENGTH 256
+#define QR_IMG_DATA_DATA_MAX_LENGTH 1024
 #define QR_IMG_DATA_CAPACITY (QR_IMG_DATA_HEADER_LENGTH + QR_IMG_DATA_DATA_MAX_LENGTH)
 
 
@@ -213,7 +213,7 @@ void init_details_screen(
     lv_label_set_recolor(screen->auth, true);
 
     // FIXME: Position and scale QR code image.
-    screen->qr = lv_img_create(view);
+    screen->qr = lv_img_create(screen->screen);
     lv_img_set_src(screen->qr, &empty_img_dsc);
     screen->qr_img_dsc = qr_img_dsc;
 }
@@ -295,8 +295,19 @@ static void cycle_timer_cb(lv_timer_t *timer) {
         // ESP_LOGI(TAG, "before rusty_generate_qr: pixel_data: %p, pixel_data_length: %u",
         //     pixel_data, pixel_data_length);
 
-        const char *message = (const char *)info->ssid;
-        if (rusty_generate_qr_lv_img_data(message, pixel_data, &pixel_data_length, &width, &height)) {
+        char message[256] = {0, };
+        const size_t message_capacity = sizeof(message)/sizeof(char);
+        const int printed = snprintf(
+            message,
+            message_capacity,
+            // FIXME: Use the right scheme and add more information.
+            "WIFI:T:foo;S:%s;H:false;;",
+            (const char *)info->ssid
+        );
+
+        if (printed < message_capacity
+            && rusty_generate_qr_lv_img_data(message, pixel_data, &pixel_data_length, &width, &height))
+        {
             // ESP_LOGI(TAG, "rusty_generate_qr(%s, %p, %u, %hu, %hu)",
             //     message,
             //     pixel_data,
@@ -312,6 +323,7 @@ static void cycle_timer_cb(lv_timer_t *timer) {
             // ESP_LOG_BUFFER_HEXDUMP(TAG, img_dsc->data, img_dsc->data_size, ESP_LOG_INFO);
 
             lv_img_set_src(new_details->qr, img_dsc);
+            lv_obj_align(new_details->qr, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
         } else {
             lv_img_set_src(new_details->qr, &empty_img_dsc);
         }
