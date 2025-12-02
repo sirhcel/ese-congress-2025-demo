@@ -1,3 +1,4 @@
+#![feature(iter_array_chunks)]
 #![no_std]
 
 mod qr;
