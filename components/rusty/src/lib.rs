@@ -7,7 +7,7 @@ mod rt;
 use core::ffi::c_int;
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rusty_add(left: c_int, right: c_int) -> c_int {
+pub extern "C" fn rusty_add(left: c_int, right: c_int) -> c_int {
     left + right
 }
 
