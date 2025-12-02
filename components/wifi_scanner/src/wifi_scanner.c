@@ -253,6 +253,25 @@ static const char *pretty_authmode(int authmode) {
 }
 
 
+static const char *wifi_qr_authmode(int authmode) {
+    switch (authmode) {
+        case WIFI_AUTH_OPEN:
+            return "T:nopass;";
+        case WIFI_AUTH_WEP:
+            return "T:WEP;";
+        case WIFI_AUTH_WPA_PSK:
+        case WIFI_AUTH_WPA2_PSK:
+        case WIFI_AUTH_WPA_WPA2_PSK:
+        case WIFI_AUTH_WPA3_PSK:
+        case WIFI_AUTH_WPA2_WPA3_PSK:
+        case WIFI_AUTH_WPA3_ENT_192:
+            return "T:WPA;";
+        default:
+            return "";
+    }
+}
+
+
 static void cycle_timer_cb(lv_timer_t *timer) {
     lv_obj_t *current_screen = lv_scr_act();
     lv_obj_t *new_screen = NULL;
@@ -300,10 +319,12 @@ static void cycle_timer_cb(lv_timer_t *timer) {
         const int printed = snprintf(
             message,
             message_capacity,
-            // FIXME: Use the right scheme and add more information.
-            "WIFI:T:foo;S:%s;H:false;;",
+            "WIFI:%sS:%s;H:false;;",
+            wifi_qr_authmode(info->authmode),
             (const char *)info->ssid
         );
+
+        ESP_LOGI(TAG, "WiFi QR data: %s", message);
 
         if (printed < message_capacity
             && rusty_generate_qr_lv_img_data(message, QR_IMG_MODULE_SIZE, pixel_data, &pixel_data_length, &width, &height))
