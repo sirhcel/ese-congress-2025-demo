@@ -1,5 +1,3 @@
-extern crate alloc;
-
 use core::panic::PanicInfo;
 use libc_alloc::LibcAlloc;
 
