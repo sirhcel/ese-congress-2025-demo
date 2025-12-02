@@ -1,5 +1,6 @@
 #![no_std]
 
+mod qr;
 mod rt;
 
 use core::ffi::c_int;
