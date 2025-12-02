@@ -8,6 +8,7 @@
 #include "nvs_flash.h"
 #include "regex.h"
 
+#include "rusty.h"
 #include "wifi_scanner.h"
 
 
@@ -107,6 +108,11 @@ static void scan_networks(void *parameters) {
 }
 
 
+#define QR_IMG_DATA_HEADER_LENGTH 8
+#define QR_IMG_DATA_DATA_MAX_LENGTH 256
+#define QR_IMG_DATA_CAPACITY (QR_IMG_DATA_HEADER_LENGTH + QR_IMG_DATA_DATA_MAX_LENGTH)
+
+
 typedef struct {
     lv_obj_t *screen;
     lv_obj_t *title;
@@ -119,6 +125,8 @@ typedef struct {
     lv_obj_t *ssid;
     lv_obj_t *rssi;
     lv_obj_t *auth;
+    lv_obj_t *qr;
+    lv_img_dsc_t *qr_img_dsc;
 } details_screen_t;
 
 static main_screen_t main_screen = {0, };
@@ -130,6 +138,51 @@ static lv_style_t label_style;
 static lv_timer_t *cycle_timer = NULL;
 
 
+static uint8_t empty_image_data[QR_IMG_DATA_HEADER_LENGTH] = {
+    0xff, 0xff, 0xff, 0xff,
+    0x00, 0x00, 0x00, 0xff,
+};
+
+static lv_img_dsc_t empty_img_dsc = {
+    .header.always_zero = 0,
+    .header.w = 0,
+    .header.h = 0,
+    .data_size = QR_IMG_DATA_HEADER_LENGTH,
+    .header.cf = LV_IMG_CF_INDEXED_1BIT,
+    .data = empty_image_data,
+};
+
+static uint8_t image_data_1[QR_IMG_DATA_CAPACITY] = {
+    0xff, 0xff, 0xff, 0xff,
+    0x00, 0x00, 0x00, 0xff,
+    0x00,
+};
+
+static lv_img_dsc_t qr_img_dsc_1 = {
+    .header.always_zero = 0,
+    .header.w = 0,
+    .header.h = 0,
+    .data_size = QR_IMG_DATA_HEADER_LENGTH,
+    .header.cf = LV_IMG_CF_INDEXED_1BIT,
+    .data = image_data_1,
+};
+
+static uint8_t image_data_2[QR_IMG_DATA_CAPACITY] = {
+    0xff, 0xff, 0xff, 0xff,
+    0x00, 0x00, 0x00, 0xff,
+    0x00,
+};
+
+static lv_img_dsc_t qr_img_dsc_2 = {
+    .header.always_zero = 0,
+    .header.w = 0,
+    .header.h = 0,
+    .data_size = QR_IMG_DATA_HEADER_LENGTH,
+    .header.cf = LV_IMG_CF_INDEXED_1BIT,
+    .data = image_data_2,
+};
+
+
 static void init_styles(void) {
     lv_style_init(&label_style);
     lv_style_set_text_color(&label_style, lv_color_hex(0x657377));
@@ -137,7 +190,11 @@ static void init_styles(void) {
 }
 
 
-void init_details_screen(details_screen_t *screen, const char *title) {
+void init_details_screen(
+    details_screen_t *screen,
+    const char *title,
+    lv_img_dsc_t *qr_img_dsc
+) {
     screen->screen = lv_obj_create(NULL);
     lv_obj_t *view = lv_obj_create(screen->screen);
     lv_obj_set_size(view, LV_HOR_RES, LV_VER_RES);
@@ -154,6 +211,11 @@ void init_details_screen(details_screen_t *screen, const char *title) {
     screen->auth = lv_label_create(view);
     lv_obj_set_style_text_font(screen->auth, &lv_font_montserrat_18, 0);
     lv_label_set_recolor(screen->auth, true);
+
+    // FIXME: Position and scale QR code image.
+    screen->qr = lv_img_create(view);
+    lv_img_set_src(screen->qr, &empty_img_dsc);
+    screen->qr_img_dsc = qr_img_dsc;
 }
 
 
@@ -222,6 +284,38 @@ static void cycle_timer_cb(lv_timer_t *timer) {
         lv_label_set_text_fmt(new_details->rssi, "#657377 RSSI:# %d", info->rssi);
         lv_label_set_text_fmt(new_details->auth, "#657377 Auth:# %s", pretty_authmode(info->authmode));
 
+        lv_img_dsc_t *img_dsc = new_details->qr_img_dsc;
+        // Safety: The data backing img_dsc->data is actually writeable and
+        // that's what we need for updating the image.
+        uint8_t *pixel_data = (uint8_t *)img_dsc->data + QR_IMG_DATA_HEADER_LENGTH;
+        size_t pixel_data_length = QR_IMG_DATA_DATA_MAX_LENGTH;
+        uint16_t width = 0;
+        uint16_t height = 0;
+
+        // ESP_LOGI(TAG, "before rusty_generate_qr: pixel_data: %p, pixel_data_length: %u",
+        //     pixel_data, pixel_data_length);
+
+        const char *message = (const char *)info->ssid;
+        if (rusty_generate_qr_lv_img_data(message, pixel_data, &pixel_data_length, &width, &height)) {
+            // ESP_LOGI(TAG, "rusty_generate_qr(%s, %p, %u, %hu, %hu)",
+            //     message,
+            //     pixel_data,
+            //     pixel_data_length,
+            //     width,
+            //     height
+            // );
+
+            img_dsc->data_size = QR_IMG_DATA_HEADER_LENGTH + pixel_data_length;
+            img_dsc->header.w = width;
+            img_dsc->header.h = height;
+
+            // ESP_LOG_BUFFER_HEXDUMP(TAG, img_dsc->data, img_dsc->data_size, ESP_LOG_INFO);
+
+            lv_img_set_src(new_details->qr, img_dsc);
+        } else {
+            lv_img_set_src(new_details->qr, &empty_img_dsc);
+        }
+
         ap_info_index += 1;
     } else {
         new_screen = main_screen.screen;
@@ -264,9 +358,9 @@ void wifi_scanner(void) {
     init_styles();
     init_main_screen(&main_screen, "WiFi Scanner");
     assert(main_screen.screen);
-    init_details_screen(&details_screen_1, "Network 1");
+    init_details_screen(&details_screen_1, "Template 1", &qr_img_dsc_1);
     assert(details_screen_1.screen);
-    init_details_screen(&details_screen_2, "Network 2");
+    init_details_screen(&details_screen_2, "Template 2", &qr_img_dsc_2);
     assert(details_screen_2.screen);
 
     lv_scr_load(main_screen.screen);
