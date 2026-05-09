@@ -94,8 +94,11 @@ pub unsafe extern "C" fn rusty_generate_qr_lv_img_data(
                         }
                     }
 
-                    if let Some(chunk) = byte_colors_iterator.into_remainder() {
-                        let byte = pack_colors(chunk.into_iter());
+                    // Only call `pack_colors` if there is actually data in the remainder for not
+                    // adding an empty byte.
+                    let mut remainder = byte_colors_iterator.into_remainder().peekable();
+                    if remainder.peek().is_some() {
+                        let byte = pack_colors(remainder);
 
                         if write_pos >= write_end {
                             return false;
